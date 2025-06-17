@@ -1,0 +1,4 @@
+soarm_control.egg-info/*
+uv.lock
+__pycache__/
+

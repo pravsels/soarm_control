@@ -15,3 +15,10 @@ To find your motorbus port, plug in your motorbus USB cable, then run:
 uv run find_ports.py 
 ```
 
+
+
+
+## Acknowledgements 
+
+The code in this repo was adapted from the [Le Robot](https://github.com/huggingface/lerobot) library by HuggingFace. 
+

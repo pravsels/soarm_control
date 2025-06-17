@@ -6,6 +6,8 @@ readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
   "pyserial>=3.5",
+  "numpy",
+  "feetech-servo-sdk"
 ]
 [build-system]
 requires = ["setuptools"]

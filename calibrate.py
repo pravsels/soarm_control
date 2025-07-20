@@ -1,47 +1,75 @@
 #!/usr/bin/env python3
-# calibrate.py — simple mechanical zero calibration
+# calibrate.py 
 
 import argparse
 import json
 from bus import FeetechBus
-from config import UIDS, DEFAULT_PORT
+
+JOINT_NAMES = [
+    "shoulder_pan",
+    "shoulder_lift",
+    "elbow_flex",
+    "wrist_flex",
+    "wrist_roll",
+    "gripper",
+]
 
 def main():
-    parser = argparse.ArgumentParser(prog="soarm-calibrate")
-    parser.add_argument(
-        "--uid", choices=list(UIDS.keys()), default="so100",
-        help="Robot UID (determines default motor IDs)"
-    )
-    parser.add_argument(
-        "--port", default=DEFAULT_PORT,
-        help="Serial port for the bus (e.g. /dev/ttyACM0)"
-    )
-    parser.add_argument(
-        "--ids", nargs="+", type=int,
-        help="Override default motor IDs"
-    )
-    parser.add_argument(
-        "--output", help="Output filename (defaults to <uid>_calibration.json)"
-    )
-    args = parser.parse_args()
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--port", default="/dev/ttyACM0")
+    ap.add_argument("--ids", nargs="+", type=int,
+                    default=[1, 2, 3, 4, 5, 6],
+                    help="Bus IDs, ordered base→gripper")
+    args = ap.parse_args()
 
-    ids = args.ids if args.ids else UIDS[args.uid]
-    bus = FeetechBus(args.port, ids)
-    try:
-        # Prompt user and read raw positions as zero offsets
-        input("Move all joints to your middle pose, then press ENTER → ")
-        offsets = bus.get_qpos()
-        bus.zero_offset = offsets
-    finally:
-        bus.disconnect()
+    bus = FeetechBus(args.port, args.ids)
 
-    # Persist to <uid>_calibration.json or custom file
-    fname = args.output or f"{args.uid}_calibration.json"
-    # Build a simple dict: motor ID → offset (rad)
-    calib_dict = {str(mid): float(off) for mid, off in zip(ids, offsets.tolist())}
-    with open(fname, "w") as f:
-        json.dump(calib_dict, f, indent=2)
-    print(f"✔ Saved zero-offset calibration to '{fname}'")
+    try: 
+        bus.set_torque(False)
+
+        input("\nMove the arm to its *middle* pose, "
+              "then press ENTER … ")
+
+        # read encoder values 
+        encoder_vals = bus.get_qpos(return_raw=True)
+
+        for sid, val in zip(args.ids, encoder_vals):
+            print(f"  ID {sid}: {val}")
+
+        calib = {}                         # final dict → JSON
+
+        for name, sid, mid_raw in zip(JOINT_NAMES, args.ids, encoder_vals):
+            print(f"\nJoint {name}  (ID {sid})")
+
+            input("  Rotate to *one* hard stop (either end) and press ENTER … ")
+            stop1 = bus.get_qpos(return_raw=True)[args.ids.index(sid)]
+
+            input("  Rotate to the *other* hard stop and press ENTER … ")
+            stop2 = bus.get_qpos(return_raw=True)[args.ids.index(sid)]
+
+            # Decide which is min / max
+            raw_min, raw_max = sorted((stop1, stop2))
+
+            calib[name] = {
+                "id": sid,
+                "homing_offset": int(mid_raw - 2048),
+                "range_min": int(raw_min),
+                "range_max": int(raw_max),
+            }
+
+            print(f"    ↳ offset {calib[name]['homing_offset']}, "
+                f"range [{raw_min}, {raw_max}]")
+
+        # ----------- save ---------------------------------------------------
+        with open("so101_calibration.json", "w") as f:
+            json.dump(calib, f, indent=2)
+        print("\n✔ Saved so101_calibration.json")
+
+    finally: 
+        try: 
+            bus.set_torque(False)
+        finally: 
+            bus.disconnect()
 
 
 if __name__ == "__main__":

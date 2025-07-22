@@ -63,7 +63,7 @@ def main():
         # ----------- save ---------------------------------------------------
         with open("so101_calibration.json", "w") as f:
             json.dump(calib, f, indent=2)
-        print("\n✔ Saved so101_calibration.json")
+        print("\n Saved so101_calibration.json")
 
     finally: 
         try: 

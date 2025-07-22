@@ -1,9 +1,14 @@
 
 import time 
+import json 
 import numpy as np
 from bus import FeetechBus
 
-bus = FeetechBus("/dev/ttyACM0", [1,2,3,4,5,6],
+with open('so101_motorbus_port.json') as f: 
+    port = json.load(f)['port']
+
+bus = FeetechBus(port, 
+                 [1,2,3,4,5,6],
                  calib_file="so101_calibration.json")
 
 def send_waypoints(current, target):

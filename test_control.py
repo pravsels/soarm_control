@@ -30,6 +30,8 @@ try:
 
     send_waypoints(target, current)
 
+    bus.set_torque(False)
+
 finally:
     bus.disconnect()
 

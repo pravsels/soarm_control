@@ -11,24 +11,31 @@ bus = FeetechBus(port,
                  [1,2,3,4,5,6],
                  calib_file="so101_calibration.json")
 
-def send_waypoints(current, target):
-    steps = 20  # number of intermediate steps
-    for i in range(1, steps + 1):
-        intermediate = current + (target - current) * (i / steps)
-        bus.set_qpos(intermediate)
-        time.sleep(0.099)  # small delay between steps
-        print(f"Step {i}/{steps}")
+def joint_space_waypoints(current, target, steps=100):
+    s = np.linspace(0., 1., steps, dtype=np.float32)
+    # current is repeated STEPS times and the differnce (target - current)
+    # is repeated STEPS times and each time it's scaled by 
+    # an element of s, taking small steps towards the target. 
+    return current + (target - current) * s[:,  None]
+
+def send_waypoints(current, target, duration, verbose=False):
+    waypoints = joint_space_waypoints(current, target, 500)
+    delay_per_step = duration / len(waypoints)
+    for i, intermediate_waypoint in enumerate(waypoints):
+        bus.set_qpos(intermediate_waypoint)
+        time.sleep(delay_per_step)  # small delay between steps
+        if verbose:
+            print(f"Step {i}/{len(waypoints)}")
 
 try:
-    print("read qpos:", bus.get_qpos())        # should be near 0s
-    target = np.array([0.5, 0, 0, 0, 0, 0], dtype=np.float32)
+    target = np.array([0, 0, 0, 0, 0, 0], dtype=np.float32)
     current = bus.get_qpos()
     
-    send_waypoints(current, target)
+    send_waypoints(current, target, duration=2.5)
 
-    time.sleep(2)
+    time.sleep(0.8)
 
-    send_waypoints(target, current)
+    send_waypoints(target, current, duration=2.5)
 
     bus.set_torque(False)
 

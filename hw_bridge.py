@@ -3,7 +3,7 @@
 import time, json, argparse, zmq
 import numpy as np 
 from bus import FeetechBus
-from utils import send_waypoints, make_pub, make_sub
+from utils import make_pub, make_sub
 
 # port for publishing real arm state 
 PUB_ADDR = "tcp://*:6000"
@@ -30,7 +30,7 @@ def run_loop(pub, sub, get_state, apply_state, topic_name):
                 msg_master = json.loads(payload.decode())
                 apply_state(np.array(msg_master["qpos"], dtype=np.float32))
 
-            time.sleep(0.02)  # ~50Hz
+            time.sleep(0.01)  # ~100Hz
     except KeyboardInterrupt:
         raise 
 
@@ -49,7 +49,15 @@ def main():
         return bus.get_qpos().astype(float).tolist()
 
     def apply_sim_state(qpos_sim):
-        send_waypoints(bus, qpos_sim, duration=0.2)
+        qpos_current = bus.get_qpos()
+        delta = qpos_sim - qpos_current
+
+        # clip each joint to ±rad
+        max_step = 0.1
+        delta_clipped = np.clip(delta, -max_step, max_step)
+        qpos_next = qpos_current + delta_clipped
+        
+        bus.set_qpos(qpos_next)
 
     try:
         run_loop(pub, sub, get_hw_state, apply_sim_state, "so101.state_real")

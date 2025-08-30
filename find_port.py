@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-# Copyright 2024 The HuggingFace Inc. team.
-# Licensed under the Apache License, Version 2.0.
+# find_port.py
+
 import time
 import json
 from serial.tools import list_ports
@@ -21,9 +21,12 @@ def find_motorsbus_port():
             input("Re-plug the USB cable now, then press Enter → ")
             
             # Ask user for a name to save the port configuration
-            name = input("Enter a name for this MotorsBus device: ").strip()
-            if not name:
-                name = "default"
+            while True: 
+                name = input("Enter a name for this MotorsBus device (so101_leader / so101_follower) : ").strip()
+                if name in {"so101_leader", "so101_follower", 
+                            "so100_leader", "so100_follower"}:
+                    break 
+                print("Invalid name. Please enter either 'so100' or 'so101'.")
             
             # Save the port configuration
             config = {"port": port}

@@ -5,6 +5,7 @@ import json
 import numpy as np
 from scservo_sdk import PortHandler, PacketHandler, GroupSyncRead, GroupSyncWrite
 from scservo_sdk import COMM_SUCCESS, COMM_TX_FAIL
+from typing import Optional, List
 
 _CTL = {
     "Present_Position": (56, 2),
@@ -57,6 +58,8 @@ class FeetechBus:
         self.port_handler.setBaudRate(baudrate)
         self.packet_handler = PacketHandler(protocol)
 
+        self.assert_same_firmware()
+
         if calib_file:
             self._off_raw, self._min_raw, self._max_raw = _load_calibration(calib_file, ids)
         else: 
@@ -79,7 +82,28 @@ class FeetechBus:
 
     def get_qpos(self, return_raw=False) -> np.ndarray:
         """Read Present_Position (radians)."""
-        if self.reader.txRxPacket() != COMM_SUCCESS:
+        addr_r, len_r = _CTL["Present_Position"]
+
+        if self.read_groups:   # special groups (e.g. leader arm workaround)
+            vals: dict[int, int] = {}
+            for grp in self.read_groups:
+                reader = GroupSyncRead(self.port_handler, self.packet_handler, addr_r, len_r)
+                for sid in grp:
+                    reader.addParam(sid)
+                comm = reader.txRxPacket()
+                if comm != COMM_SUCCESS:
+                    print(f"comm fail for group {grp}:",
+                        comm, self.packet_handler.getTxRxResult(comm))
+                    raise RuntimeError("Group read failed")
+                for sid in grp:
+                    vals[sid] = reader.getData(sid, addr_r, len_r)
+            raw = np.array([vals[sid] for sid in self.ids], dtype=np.int32)
+            return raw if return_raw else self._raw_to_rad(raw)
+
+        # --- default (all IDs in one group) ---
+        comm = self.reader.txRxPacket()
+        if comm != COMM_SUCCESS:
+            print("comm : ", comm, self.packet_handler.getTxRxResult(comm))
             raise RuntimeError("Read failed")
         raw = [self.reader.getData(i, *_CTL["Present_Position"]) for i in self.ids]
         raw = np.array(raw, dtype=np.int32)
@@ -111,3 +135,34 @@ class FeetechBus:
     def _rad_to_raw(self, rad: np.ndarray) -> np.ndarray:
         enc_val = (rad / _ENC2RAD) + 2048 + self._off_raw
         return np.clip(enc_val.round().astype(int), self._min_raw, self._max_raw)
+
+    def get_firmware_versions(self):
+        """Return {id: 'X'} for each motor (firmware version byte)."""
+        versions = {}
+        for sid in self.ids:
+            # major
+            major, comm, err = self.packet_handler.read1ByteTxRx(self.port_handler, sid, 0)
+            if comm != COMM_SUCCESS or err != 0:
+                print(f"⚠️ Could not read firmware major for ID {sid}")
+                continue
+
+            # minor
+            minor, comm, err = self.packet_handler.read1ByteTxRx(self.port_handler, sid, 1)
+            if comm != COMM_SUCCESS or err != 0:
+                print(f"⚠️ Could not read firmware minor for ID {sid}")
+                continue
+
+            versions[sid] = f"{major}.{minor}"
+        return versions
+
+    def assert_same_firmware(self):
+        versions = self.get_firmware_versions()
+        if not versions:
+            raise RuntimeError("Could not read firmware versions from any motors")
+        if len(set(versions.values())) != 1:
+            raise RuntimeError(
+                "Motors have mismatched firmware versions:\n"
+                + "\n".join(f"  ID {sid}: {ver}" for sid, ver in versions.items())
+            )
+        print(f"All motors firmware version {next(iter(versions.values()))}")
+

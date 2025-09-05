@@ -12,7 +12,7 @@ def main():
     while True:
         device_name = input(
             "Calibrating for which device? "
-            "(so100_leader / so100_follower / so101_leader / so101_follower): "
+            "(so101_leader / so101_follower): "
         ).strip()
         if device_name in {"so100_leader", "so100_follower", "so101_leader", "so101_follower"}:
             break

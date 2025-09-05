@@ -38,7 +38,6 @@ def _load_calibration(path: str, ids: list[int]):
 
     return offset, range_min, range_max
 
-
 def busy_wait(dt_s: float):
     end = time.perf_counter() + dt_s
     while time.perf_counter() < end:
@@ -82,25 +81,6 @@ class FeetechBus:
 
     def get_qpos(self, return_raw=False) -> np.ndarray:
         """Read Present_Position (radians)."""
-        addr_r, len_r = _CTL["Present_Position"]
-
-        if self.read_groups:   # special groups (e.g. leader arm workaround)
-            vals: dict[int, int] = {}
-            for grp in self.read_groups:
-                reader = GroupSyncRead(self.port_handler, self.packet_handler, addr_r, len_r)
-                for sid in grp:
-                    reader.addParam(sid)
-                comm = reader.txRxPacket()
-                if comm != COMM_SUCCESS:
-                    print(f"comm fail for group {grp}:",
-                        comm, self.packet_handler.getTxRxResult(comm))
-                    raise RuntimeError("Group read failed")
-                for sid in grp:
-                    vals[sid] = reader.getData(sid, addr_r, len_r)
-            raw = np.array([vals[sid] for sid in self.ids], dtype=np.int32)
-            return raw if return_raw else self._raw_to_rad(raw)
-
-        # --- default (all IDs in one group) ---
         comm = self.reader.txRxPacket()
         if comm != COMM_SUCCESS:
             print("comm : ", comm, self.packet_handler.getTxRxResult(comm))
@@ -164,5 +144,5 @@ class FeetechBus:
                 "Motors have mismatched firmware versions:\n"
                 + "\n".join(f"  ID {sid}: {ver}" for sid, ver in versions.items())
             )
-        print(f"All motors firmware version {next(iter(versions.values()))}")
+        # print(f"All motors firmware version {next(iter(versions.values()))}")
 

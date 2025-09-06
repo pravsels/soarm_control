@@ -41,9 +41,7 @@ if not os.path.exists(calib_file):
 bus = FeetechBus(port, UIDS, 
                  calib_file=calib_file)
 
-def move_to(qpos_target, tol=1e-2, timeout=2.0, 
-            step_size=0.02 # ~ 1 degree 
-            ):
+def move_to(qpos_target, tol=1e-2, timeout=3.0, step_size=0.1):
     t0 = time.time()
 
     while True:

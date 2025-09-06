@@ -87,6 +87,8 @@ class FeetechBus:
             raise RuntimeError("Read failed")
         raw = [self.reader.getData(i, *_CTL["Present_Position"]) for i in self.ids]
         raw = np.array(raw, dtype=np.int32)
+        # normalize to be in range 0-4095
+        raw = raw & 0x0FFF
         return raw if return_raw else self._raw_to_rad(raw)
 
     def set_qpos(self, qpos: np.ndarray):

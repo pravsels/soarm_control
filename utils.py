@@ -1,10 +1,14 @@
 
 import zmq
 
-def make_pub(ctx, addr, topic_name):
+def make_pub(ctx, addr, topic_name, bind=True):
     pub = ctx.socket(zmq.PUB)
-    pub.bind(addr)
-    print(f"Publishing on {addr}, topic = {topic_name}")
+    if bind:
+        pub.bind(addr)
+        print(f"Publishing (bind) on {addr}, topic = {topic_name}")
+    else:
+        pub.connect(addr)
+        print(f"Publishing (connect) to {addr}, topic = {topic_name}")
     return pub
 
 def make_sub(ctx, addr, topic_name):

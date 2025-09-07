@@ -1,23 +1,26 @@
-#!/usr/bin/env python3
 # calibrate.py 
 
 import os 
-import json
+import json, argparse
 from bus import FeetechBus
 from config import JOINT_NAMES, UIDS
 
 def main():
 
-    # --- Ask user which device this calibration is for ---
-    while True:
-        device_name = input(
-            "Calibrating for which device? "
-            "(so101_leader / so101_follower): "
-        ).strip()
-        if device_name in {"so100_leader", "so100_follower", "so101_leader", "so101_follower"}:
-            break
-        print("Invalid choice. Allowed options: so100_leader, so100_follower, so101_leader, so101_follower.")
+    parser = argparse.ArgumentParser()
 
+    parser.add_argument("--mode", 
+                        choices=["leader"], 
+                        default="follower",
+                        help="Set hardware as leader (default=follower)")
+    parser.add_argument("--device",
+                        choices=['so101', 'so100'],
+                        default="so101",
+                        help="Which device config to use (default=so101)")
+    
+    family, role = args.device, args.mode 
+    device_name = f"{family}_{role}"
+    
     # Load port info from the corresponding motorbus config
     port_config_file = f"{device_name}_motorbus_port.json"
     if not os.path.exists(port_config_file):
@@ -46,7 +49,7 @@ def main():
         for sid, val in zip(UIDS, encoder_vals):
             print(f"  ID {sid}: {val}")
 
-        calib = {}                         # final dict → JSON
+        calib = {}                         
 
         for name, sid, mid_raw in zip(JOINT_NAMES, UIDS, encoder_vals):
             print(f"\nJoint {name}  (ID {sid})")
@@ -70,7 +73,7 @@ def main():
             print(f"    ↳ offset {calib[name]['homing_offset']}, "
                 f"range [{raw_min}, {raw_max}]")
 
-        # ----------- save ---------------------------------------------------
+        # save 
         with open(calib_file, "w") as f:
             json.dump(calib, f, indent=2)
         print(f"Saved {calib_file}")

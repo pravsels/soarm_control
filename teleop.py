@@ -5,27 +5,49 @@ import numpy as np
 from bus import FeetechBus
 from utils import make_pub, make_sub, to_norm, from_norm
 from config import UIDS
+import sys 
 
 # port for publishing real arm state 
 PUB_ADDR = "tcp://*:6000"
 # port for subscribing to real arm 
 SUB_ADDR = "tcp://localhost:6001"
 
-def run_loop(pub, sub, get_state, apply_state, topic_name):
+def run_loop(pub, sub, get_state, apply_state, topic_name, calib_by_id, debug=False):
     try:
+        follower_goal = None
         while True:
             # publish own state
-            qpos = get_state()
-            msg = {"t": time.time(), "qpos": qpos}
+            qpos, qpos_norm = get_state()
+            msg = {"t": time.time(), "qpos_norm": qpos_norm}
             pub.send_multipart([topic_name.encode(), json.dumps(msg).encode()])
 
             # if follower, apply master's state
             if sub and sub.poll(timeout=0):
                 _, payload = sub.recv_multipart(flags=zmq.NOBLOCK)
                 msg_master = json.loads(payload.decode())
-                apply_state(np.array(msg_master["qpos"], dtype=np.float32))
+                follower_goal = np.array(msg_master["qpos_norm"], dtype=np.float32)
+                apply_state(follower_goal)
 
             time.sleep(0.02)  # ~100Hz
+
+            if debug:
+                sys.stdout.write(f"\033[{len(UIDS)}F") 
+
+                lines = []
+                for i, uid in enumerate(UIDS):
+                    entry = calib_by_id.get(uid, {})
+                    rmin, rmax = entry.get("range_min", 0), entry.get("range_max", 0)
+                    norm_val = qpos_norm[i]
+                    row = f"{i+1:<5} {entry['name']:<15} {qpos[i]:>6} {rmin:>6} {rmax:>6} {norm_val:>7.1f}"
+
+                    if follower_goal is not None:  # only for follower
+                        row += f" goal={follower_goal[i]:>7.1f}"
+
+                    lines.append(row)
+
+                sys.stdout.write("\n".join(lines) + "\n")
+                sys.stdout.flush()
+        
     except KeyboardInterrupt:
         raise 
 
@@ -40,6 +62,8 @@ def main():
                         choices=['so101', 'so100'],
                         default="so101",
                         help="Which device config to use (default=so101)")
+    parser.add_argument("--debug", action="store_true",
+                        help="Show realtime joint table + goals (if follower)")
 
     args = parser.parse_args()
     
@@ -51,7 +75,11 @@ def main():
         port = json.load(f)['port']
     with open(f"{device_name}_calibration.json") as f:
         calib_json = json.load(f)
-    calib_by_id = {entry["id"]: entry for entry in calib_json.values()}
+    calib_by_id = {}
+    for name, entry in calib_json.items():
+        entry = dict(entry)   # copy so we can add to it
+        entry["name"] = name  # stash the joint name
+        calib_by_id[entry["id"]] = entry
 
     bus = FeetechBus(port, UIDS, calib_file=f"{device_name}_calibration.json")
 
@@ -78,13 +106,12 @@ def main():
 
     def get_hw_state():
         raw = bus.get_qpos(return_raw=True)
-        return to_norm(raw, calib_by_id, UIDS).tolist()
+        return raw, to_norm(raw, calib_by_id, UIDS).tolist()
 
     def apply_state(qpos_norm):
-        raw_current = bus.get_qpos(return_raw=True)
-        norm_current = to_norm(raw_current, calib_by_id, UIDS)
+        raw_current, norm_current = get_hw_state()
 
-        delta = np.array(qpos_norm, dtype=np.float32) - norm_current
+        delta = qpos_norm - norm_current
         max_step = 5.0  # step in normalized units
         norm_next = norm_current + np.clip(delta, -max_step, max_step)
 
@@ -93,7 +120,17 @@ def main():
         bus.set_qpos(qpos_next_rad.astype(np.float32))
 
     try:
-        run_loop(pub, sub, get_hw_state, apply_state, f"{device_name}.state_real")
+        if args.debug:
+            print(f"{'idx':<5} {'name':<15} {'raw':>6} {'min':>6} {'max':>6} {'norm':>8}")
+            for _ in range(len(UIDS)):
+                print()  # reserve N lines
+                
+        run_loop(pub, sub, 
+                 get_hw_state, 
+                 apply_state, 
+                 f"{device_name}.state_real", 
+                 calib_by_id,
+                 debug=args.debug)
     finally:
         pub.close(0)
         if sub:
@@ -102,6 +139,10 @@ def main():
 
         bus.set_torque(False)
         bus.disconnect()
+
+        if args.debug:
+            sys.stdout.write("\033[?25h\n")
+            sys.stdout.flush()
 
 if __name__ == '__main__':
     main()

@@ -20,6 +20,8 @@ def make_sub(ctx, addr, topic_name):
     print(f"Subscribed to {addr}, topic = {topic_name}")
     return sub
 
+NORM_RANGE_MAX = 200.0
+
 def to_norm(raw_vals, calib_by_id, ids):
     """Map raw ticks → normalized values using [range_min, range_max]."""
     norm = []
@@ -29,7 +31,7 @@ def to_norm(raw_vals, calib_by_id, ids):
         t = (raw - rmin) / float(rmax - rmin + 1e-9)
         t = float(np.clip(t, 0.0, 1.0)) 
 
-        norm.append(t * 100.0)
+        norm.append(t * NORM_RANGE_MAX)
 
     return np.array(norm, dtype=np.float32)
 
@@ -40,7 +42,7 @@ def from_norm(norm_vals, calib_by_id, ids):
         c = calib_by_id[sid]
         rmin, rmax = c["range_min"], c["range_max"]
 
-        t = np.clip(n / 100.0, 0.0, 1.0)
+        t = np.clip(n / NORM_RANGE_MAX, 0.0, 1.0)
 
         raw.append(int(round(rmin + t * (rmax - rmin))))
     return np.array(raw, dtype=np.int32)

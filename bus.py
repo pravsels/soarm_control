@@ -125,13 +125,13 @@ class FeetechBus:
             # major
             major, comm, err = self.packet_handler.read1ByteTxRx(self.port_handler, sid, 0)
             if comm != COMM_SUCCESS or err != 0:
-                print(f"⚠️ Could not read firmware major for ID {sid}")
+                print(f"Could not read firmware major for ID {sid}")
                 continue
 
             # minor
             minor, comm, err = self.packet_handler.read1ByteTxRx(self.port_handler, sid, 1)
             if comm != COMM_SUCCESS or err != 0:
-                print(f"⚠️ Could not read firmware minor for ID {sid}")
+                print(f"Could not read firmware minor for ID {sid}")
                 continue
 
             versions[sid] = f"{major}.{minor}"

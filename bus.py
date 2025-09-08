@@ -47,7 +47,7 @@ class FeetechBus:
     def __init__(self, 
                  port: str, 
                  ids: list[int],
-                 calib_file: str | None = None,
+                 calib_file: str,
                  baudrate: int = 1_000_000, 
                  protocol: int = 0):
         self.ids = ids

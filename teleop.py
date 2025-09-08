@@ -3,7 +3,7 @@
 import time, json, argparse, zmq
 import numpy as np 
 from bus import FeetechBus
-from utils import make_pub, make_sub
+from utils import make_pub, make_sub, to_norm, from_norm
 from config import UIDS
 
 # port for publishing real arm state 
@@ -33,7 +33,7 @@ def main():
     parser = argparse.ArgumentParser()
 
     parser.add_argument("--mode", 
-                        choices=["leader"], 
+                        choices=["leader", "follower"], 
                         default="follower",
                         help="Set hardware as leader (default=follower)")
     parser.add_argument("--device",
@@ -49,6 +49,9 @@ def main():
     
     with open(f"{device_name}_motorbus_port.json") as f: 
         port = json.load(f)['port']
+    with open(f"{device_name}_calibration.json") as f:
+        calib_json = json.load(f)
+    calib_by_id = {entry["id"]: entry for entry in calib_json.values()}
 
     bus = FeetechBus(port, UIDS, calib_file=f"{device_name}_calibration.json")
 
@@ -74,18 +77,20 @@ def main():
     sub = None if is_leader else make_sub(ctx, sub_addr, f"{peer}.state_real")
 
     def get_hw_state():
-        return bus.get_qpos().astype(float).tolist()
+        raw = bus.get_qpos(return_raw=True)
+        return to_norm(raw, calib_by_id, UIDS).tolist()
 
-    def apply_state(qpos_sim):
-        qpos_current = bus.get_qpos()
-        delta = qpos_sim - qpos_current
+    def apply_state(qpos_norm):
+        raw_current = bus.get_qpos(return_raw=True)
+        norm_current = to_norm(raw_current, calib_by_id, UIDS)
 
-        # clip each joint to ±rad
-        max_step = 0.1
-        delta_clipped = np.clip(delta, -max_step, max_step)
-        qpos_next = qpos_current + delta_clipped
-        
-        bus.set_qpos(qpos_next)
+        delta = np.array(qpos_norm, dtype=np.float32) - norm_current
+        max_step = 5.0  # step in normalized units
+        norm_next = norm_current + np.clip(delta, -max_step, max_step)
+
+        raw_next = from_norm(norm_next, calib_by_id, UIDS)
+        qpos_next_rad = bus._raw_to_rad(raw_next)  
+        bus.set_qpos(qpos_next_rad.astype(np.float32))
 
     try:
         run_loop(pub, sub, get_hw_state, apply_state, f"{device_name}.state_real")

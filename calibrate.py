@@ -18,6 +18,8 @@ def main():
                         default="so101",
                         help="Which device config to use (default=so101)")
     
+    args = parser.parse_args()
+
     family, role = args.device, args.mode 
     device_name = f"{family}_{role}"
     

@@ -6,18 +6,22 @@ import numpy as np
 from scservo_sdk import PortHandler, PacketHandler, GroupSyncRead, GroupSyncWrite
 from scservo_sdk import COMM_SUCCESS, COMM_TX_FAIL
 from typing import Optional, List
+from config import MOTOR_RESOLUTION
 
 _CTL = {
     "Present_Position": (56, 2),
     "Goal_Position":    (42, 2),
+    "Homing_Offset": (31, 2),
 }
 
-_ENC2RAD = 2.0 * np.pi / 4096.      # radians per encoder count 
+_ENC2RAD = 2.0 * np.pi / MOTOR_RESOLUTION      # radians per encoder count 
+
+MID_POSITION = int((MOTOR_RESOLUTION -1)/ 2)
 
 def _load_calibration(path: str, ids: list[int]): 
     offset = np.zeros(len(ids), dtype=np.int32)
     range_min = np.zeros(len(ids), dtype=np.int32)
-    range_max = np.full(len(ids), 4095, dtype=np.int32)
+    range_max = np.full(len(ids), MOTOR_RESOLUTION - 1, dtype=np.int32)
 
     try: 
         with open(path) as f: 
@@ -47,7 +51,7 @@ class FeetechBus:
     def __init__(self, 
                  port: str, 
                  ids: list[int],
-                 calib_file: str,
+                 calib_file: str | None = None,
                  baudrate: int = 1_000_000, 
                  protocol: int = 0):
         self.ids = ids
@@ -64,20 +68,34 @@ class FeetechBus:
         else: 
             self._off_raw = np.zeros(len(ids), np.int32)
             self._min_raw = np.zeros(len(ids), np.int32)
-            self._max_raw = np.full(len(ids), 4095, np.int32)
+            self._max_raw = np.full(len(ids), MOTOR_RESOLUTION-1, np.int32)
 
-        # setup reader
+        # setup reader for present position 
         addr_r, len_r = _CTL["Present_Position"]
         self.reader = GroupSyncRead(self.port_handler, self.packet_handler, addr_r, len_r)
         for i in ids:
             self.reader.addParam(i)
 
-        # setup writer
+        # setup writer for goal position 
         addr_w, len_w = _CTL["Goal_Position"]
         self.writer = GroupSyncWrite(self.port_handler, self.packet_handler, addr_w, len_w)
 
     def disconnect(self):
         self.port_handler.closePort()
+
+    def set_homing_offsets(self, raws: np.ndarray) -> np.ndarray:
+        """Write Homing_Offset."""
+        addr_w, len_w = _CTL["Homing_Offset"]
+        writer_homing = GroupSyncWrite(self.port_handler, self.packet_handler, addr_w, len_w)
+        writer_homing.clearParam()
+        offsets = raws - MID_POSITION
+        for i, offset in zip(self.ids, offsets):
+            # extract low order and high order bits 
+            low, high = offset & 0xFF, (offset >> 8) & 0xFF
+            writer_homing.addParam(i, [low, high])
+        if writer_homing.txPacket() != COMM_SUCCESS:
+            raise RuntimeError("Write failed")
+        return offsets
 
     def get_qpos(self, return_raw=False) -> np.ndarray:
         """Read Present_Position (radians)."""
@@ -112,10 +130,10 @@ class FeetechBus:
                 raise RuntimeError(f"Torque write failed for ID {sid}")
             
     def _raw_to_rad(self, raw: np.ndarray) -> np.ndarray:
-        return (raw - 2048 - self._off_raw) * _ENC2RAD
+        return (raw - MID_POSITION) * _ENC2RAD
 
     def _rad_to_raw(self, rad: np.ndarray) -> np.ndarray:
-        enc_val = (rad / _ENC2RAD) + 2048 + self._off_raw
+        enc_val = (rad / _ENC2RAD) + MID_POSITION
         return np.clip(enc_val.round().astype(int), self._min_raw, self._max_raw)
 
     def get_firmware_versions(self):

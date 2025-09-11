@@ -3,6 +3,8 @@ UIDS =  [1,2,3,4,5,6]
 
 DEFAULT_PORT = "/dev/ttyACM0"
 
+MOTOR_RESOLUTION = 4096
+
 # Gear ratios: joint_rotation / motor_rotation
 # e.g., 1/345 means 1 joint rotation = 345 motor rotations
 GEAR_RATIOS = {

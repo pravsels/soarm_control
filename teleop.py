@@ -1,4 +1,4 @@
-# hw_bridge.py 
+# teleop.py 
 
 import time, json, argparse, zmq
 import numpy as np 
@@ -6,7 +6,6 @@ from bus import FeetechBus
 from utils import make_pub, make_sub, to_norm, from_norm
 from config import UIDS
 import sys 
-
 
 def run_loop(pub, sub, get_state, apply_state, topic_name, calib_by_id, debug=False):
     try:
@@ -111,7 +110,7 @@ def main():
     sub = None if is_leader else make_sub(ctx, sub_addr, f"{peer}.state_real")
 
     def get_hw_state():
-        raw = bus.get_qpos(return_raw=True)
+        raw = bus.get_qpos()
         return raw, to_norm(raw, calib_by_id, UIDS).tolist()
 
     def apply_state(qpos_norm):
@@ -122,8 +121,7 @@ def main():
         norm_next = norm_current + np.clip(delta, -max_step, max_step)
 
         raw_next = from_norm(norm_next, calib_by_id, UIDS)
-        qpos_next_rad = bus._raw_to_rad(raw_next)  
-        bus.set_qpos(qpos_next_rad.astype(np.float32))
+        bus.set_qpos(raw_next)
 
     try:
         if args.debug:

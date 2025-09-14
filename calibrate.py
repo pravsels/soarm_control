@@ -1,7 +1,7 @@
 # calibrate.py 
 
 import os 
-import json, argparse
+import json, argparse, time 
 from bus import FeetechBus
 from config import JOINT_NAMES, UIDS
 
@@ -10,7 +10,7 @@ def main():
     parser = argparse.ArgumentParser()
 
     parser.add_argument("--mode", 
-                        choices=["leader"], 
+                        choices=["leader", "follower"], 
                         default="follower",
                         help="Set hardware as leader (default=follower)")
     parser.add_argument("--device",
@@ -39,35 +39,46 @@ def main():
 
     bus = FeetechBus(port, UIDS)
 
+    print(f"Starting calibration for device: {device_name}")
+
     try: 
         bus.set_torque(False)
+
+        bus.sync_write("Homing_Offset", [0] * len(UIDS), ids=UIDS)
+        time.sleep(0.05)  # small pause for EEPROM write
 
         input("\nMove the arm to its *middle* pose, "
               "then press ENTER … ")
 
         # read encoder values 
-        encoder_vals = bus.get_qpos(return_raw=True)
+        encoder_vals = bus.get_qpos()
+
+        homing_offsets = bus.set_homing_offsets(encoder_vals)
 
         for sid, val in zip(UIDS, encoder_vals):
             print(f"  ID {sid}: {val}")
 
         calib = {}                         
 
-        for name, sid, mid_raw in zip(JOINT_NAMES, UIDS, encoder_vals):
+        for name, sid, homing_offset in zip(JOINT_NAMES, UIDS, homing_offsets):
             print(f"\nJoint {name}  (ID {sid})")
 
             input("  Rotate to *one* hard stop (either end) and press ENTER … ")
-            stop1 = bus.get_qpos(return_raw=True)[UIDS.index(sid)]
+            stop1 = bus.get_qpos()[UIDS.index(sid)]
 
             input("  Rotate to the *other* hard stop and press ENTER … ")
-            stop2 = bus.get_qpos(return_raw=True)[UIDS.index(sid)]
+            stop2 = bus.get_qpos()[UIDS.index(sid)]
 
             # Decide which is min / max
             raw_min, raw_max = sorted((stop1, stop2))
 
+            bus.sync_write("Min_Position_Limit", [raw_min], ids=[sid])
+            bus.sync_write("Max_Position_Limit", [raw_max], ids=[sid])
+
             calib[name] = {
                 "id": sid,
-                "homing_offset": int(mid_raw - 2048),
+                "drive_mode": 0,
+                "homing_offset": int(homing_offset),
                 "range_min": int(raw_min),
                 "range_max": int(raw_max),
             }
